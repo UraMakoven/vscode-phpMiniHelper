@@ -3,6 +3,7 @@ import {
   Position,
   Range,
   TextDocumentChangeEvent,
+  TextDocumentContentChangeEvent,
   TextEditorEdit,
   window,
   workspace,
@@ -13,11 +14,58 @@ export class PhpExtension {
 
   public constructor(context: ExtensionContext) {
     workspace.onDidChangeTextDocument((event: TextDocumentChangeEvent) => {
-      this.checkPhpObjectOperator(event);
+      this.replacePhpObjectOperator(event);
     });
   }
 
-  private checkPhpObjectOperator(event: TextDocumentChangeEvent) {
+  private async sleep(ms: number) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private async addText(
+    range: Range,
+    re: RegExp,
+    text: string,
+    deleteChars: number
+  ) {
+    const editor = window.activeTextEditor;
+    if (!editor) {
+      return;
+    }
+
+    const start = range.start.translate(0, 1);
+
+    const r = new Range(new Position(range.start.line, 0), start);
+
+    const textLine = editor.document.getText(r);
+
+    if (re.test(textLine)) {
+      await editor.edit((editBuilder: TextEditorEdit) => {
+        if (deleteChars) {
+          editBuilder.delete(
+            new Range(range.start.translate(0, -(deleteChars - 1)), start)
+          );
+        }
+        editBuilder.insert(start, text);
+      });
+    }
+  }
+
+  private async applyChanges(element: TextDocumentContentChangeEvent) {
+    switch (element.text) {
+      case "-":
+        await this.addText(element.range, /[\$,>][A-z,0-9,_]+-$/, ">", 0);
+        break;
+      case "=":
+        await this.addText(element.range, /[",'].+?[",'].*?=$/, ">", 0);
+        break;
+      case ".":
+        await this.addText(element.range, /[\$,>][A-z,0-9,_]+\.$/, "->", 1);
+        break;
+    }
+  }
+
+  private replacePhpObjectOperator(event: TextDocumentChangeEvent) {
     if (!event.document.uri.path.includes(".php")) {
       return;
     }
@@ -34,44 +82,11 @@ export class PhpExtension {
 
     this.changeTimers.set(
       fileName,
-      setTimeout(() => {
+      setTimeout(async () => {
         this.changeTimers.delete(fileName);
 
-        const c = event.contentChanges[0].text;
-
-        const editor = window.activeTextEditor;
-        if (editor) {
-          if (c === "-") {
-            const range = new Range(
-              new Position(editor.selection.start.line, 0),
-              editor.selection.start.translate(0, 0)
-            );
-
-            const text = editor.document.getText(range);
-
-            // $this-  $obj->user-
-            const re = /[\$,>][A-z,_]+-$/;
-            if (re.test(text)) {
-              editor.edit((editBuilder: TextEditorEdit) => {
-                editBuilder.insert(editor.selection.start.translate(0, 0), ">");
-              });
-            }
-          } else if (c === "=") {
-            const range = new Range(
-              new Position(editor.selection.start.line, 0),
-              editor.selection.start.translate(0, 0)
-            );
-
-            const text = editor.document.getText(range);
-
-            // "key" =
-            const re = /[",'].+?[",'].*?=$/;
-            if (re.test(text)) {
-              editor.edit((editBuilder: TextEditorEdit) => {
-                editBuilder.insert(editor.selection.start.translate(0, 0), ">");
-              });
-            }
-          }
+        for (const el of event.contentChanges) {
+          const d = await this.applyChanges(el);
         }
       }, 300)
     );

@@ -6,10 +6,43 @@ class PhpExtension {
     constructor(context) {
         this.changeTimers = new Map();
         vscode_1.workspace.onDidChangeTextDocument((event) => {
-            this.checkPhpObjectOperator(event);
+            this.replacePhpObjectOperator(event);
         });
     }
-    checkPhpObjectOperator(event) {
+    async sleep(ms) {
+        return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+    async addText(range, re, text, deleteChars) {
+        const editor = vscode_1.window.activeTextEditor;
+        if (!editor) {
+            return;
+        }
+        const start = range.start.translate(0, 1);
+        const r = new vscode_1.Range(new vscode_1.Position(range.start.line, 0), start);
+        const textLine = editor.document.getText(r);
+        if (re.test(textLine)) {
+            await editor.edit((editBuilder) => {
+                if (deleteChars) {
+                    editBuilder.delete(new vscode_1.Range(range.start.translate(0, -(deleteChars - 1)), start));
+                }
+                editBuilder.insert(start, text);
+            });
+        }
+    }
+    async applyChanges(element) {
+        switch (element.text) {
+            case "-":
+                await this.addText(element.range, /[\$,>][A-z,0-9,_]+-$/, ">", 0);
+                break;
+            case "=":
+                await this.addText(element.range, /[",'].+?[",'].*?=$/, ">", 0);
+                break;
+            case ".":
+                await this.addText(element.range, /[\$,>][A-z,0-9,_]+\.$/, "->", 1);
+                break;
+        }
+    }
+    replacePhpObjectOperator(event) {
         if (!event.document.uri.path.includes(".php")) {
             return;
         }
@@ -21,33 +54,10 @@ class PhpExtension {
         if (timer) {
             clearTimeout(timer);
         }
-        this.changeTimers.set(fileName, setTimeout(() => {
+        this.changeTimers.set(fileName, setTimeout(async () => {
             this.changeTimers.delete(fileName);
-            const c = event.contentChanges[0].text;
-            const editor = vscode_1.window.activeTextEditor;
-            if (editor) {
-                if (c === "-") {
-                    const range = new vscode_1.Range(new vscode_1.Position(editor.selection.start.line, 0), editor.selection.start.translate(0, 0));
-                    const text = editor.document.getText(range);
-                    // $this-  $obj->user-
-                    const re = /[\$,>][A-z,_]+-$/;
-                    if (re.test(text)) {
-                        editor.edit((editBuilder) => {
-                            editBuilder.insert(editor.selection.start.translate(0, 0), ">");
-                        });
-                    }
-                }
-                else if (c === "=") {
-                    const range = new vscode_1.Range(new vscode_1.Position(editor.selection.start.line, 0), editor.selection.start.translate(0, 0));
-                    const text = editor.document.getText(range);
-                    // "key" =
-                    const re = /[",'].+?[",'].*?=$/;
-                    if (re.test(text)) {
-                        editor.edit((editBuilder) => {
-                            editBuilder.insert(editor.selection.start.translate(0, 0), ">");
-                        });
-                    }
-                }
+            for (const el of event.contentChanges) {
+                const d = await this.applyChanges(el);
             }
         }, 300));
     }

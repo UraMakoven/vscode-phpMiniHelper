@@ -13,17 +13,6 @@
     "onCommand:type"
   ],
   "main": "./out/extension.js",
-  "contributes": {
-    "languages": [
-      {
-        "id": "php",
-        "extensions": [
-          ".php"
-        ]
-      }
-    ],
-    "commands": []
-  },
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
