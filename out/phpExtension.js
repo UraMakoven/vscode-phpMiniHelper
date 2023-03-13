@@ -9,38 +9,37 @@ class PhpExtension {
             this.replacePhpObjectOperator(event);
         });
     }
-    async sleep(ms) {
-        return new Promise((resolve) => setTimeout(resolve, ms));
-    }
-    async addText(range, re, text, deleteChars) {
+    makeObject(range, re, text, deleteChars) {
         const editor = vscode_1.window.activeTextEditor;
         if (!editor) {
-            return;
+            return null;
         }
         const start = range.start.translate(0, 1);
         const r = new vscode_1.Range(new vscode_1.Position(range.start.line, 0), start);
         const textLine = editor.document.getText(r);
         if (re.test(textLine)) {
-            await editor.edit((editBuilder) => {
-                if (deleteChars) {
-                    editBuilder.delete(new vscode_1.Range(range.start.translate(0, -(deleteChars - 1)), start));
-                }
-                editBuilder.insert(start, text);
-            });
+            return {
+                start: start,
+                delete: deleteChars,
+                text: text,
+            };
         }
+        return null;
     }
-    async applyChanges(element) {
+    makeChange(element) {
+        let res = null;
         switch (element.text) {
             case "-":
-                await this.addText(element.range, /[\$,>][A-z,0-9,_]+-$/, ">", 0);
+                res = this.makeObject(element.range, /[\$,>][A-z,0-9,_]+-$/, ">", 0);
                 break;
             case "=":
-                await this.addText(element.range, /[",'].+?[",'].*?=$/, ">", 0);
+                res = this.makeObject(element.range, /[",']\w+?[",']\s?=$/, ">", 0);
                 break;
             case ".":
-                await this.addText(element.range, /[\$,>][A-z,0-9,_]+\.$/, "->", 1);
+                res = this.makeObject(element.range, /[\$,>][A-z,0-9,_]+\.$/, "->", 1);
                 break;
         }
+        return res;
     }
     replacePhpObjectOperator(event) {
         if (!event.document.uri.path.includes(".php")) {
@@ -54,12 +53,29 @@ class PhpExtension {
         if (timer) {
             clearTimeout(timer);
         }
-        this.changeTimers.set(fileName, setTimeout(async () => {
+        this.changeTimers.set(fileName, setTimeout(() => {
             this.changeTimers.delete(fileName);
-            for (const el of event.contentChanges) {
-                const d = await this.applyChanges(el);
+            let changes = [];
+            event.contentChanges.forEach((el) => {
+                const c = this.makeChange(el);
+                if (c) {
+                    changes.push(c);
+                }
+            });
+            if (changes.length) {
+                const editor = vscode_1.window.activeTextEditor;
+                if (editor) {
+                    editor.edit((editBuilder) => {
+                        changes.forEach((el) => {
+                            if (el.delete) {
+                                editBuilder.delete(new vscode_1.Range(el.start.translate(0, -el.delete), el.start));
+                            }
+                            editBuilder.insert(el.start, el.text);
+                        });
+                    });
+                }
             }
-        }, 300));
+        }, 250));
     }
 }
 exports.PhpExtension = PhpExtension;

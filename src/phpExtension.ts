@@ -18,11 +18,7 @@ export class PhpExtension {
     });
   }
 
-  private async sleep(ms: number) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-
-  private async addText(
+  private makeObject(
     range: Range,
     re: RegExp,
     text: string,
@@ -30,7 +26,7 @@ export class PhpExtension {
   ) {
     const editor = window.activeTextEditor;
     if (!editor) {
-      return;
+      return null;
     }
 
     const start = range.start.translate(0, 1);
@@ -40,29 +36,32 @@ export class PhpExtension {
     const textLine = editor.document.getText(r);
 
     if (re.test(textLine)) {
-      await editor.edit((editBuilder: TextEditorEdit) => {
-        if (deleteChars) {
-          editBuilder.delete(
-            new Range(range.start.translate(0, -(deleteChars - 1)), start)
-          );
-        }
-        editBuilder.insert(start, text);
-      });
+      return {
+        start: start,
+        delete: deleteChars,
+        text: text,
+      };
     }
+
+    return null;
   }
 
-  private async applyChanges(element: TextDocumentContentChangeEvent) {
+  private makeChange(element: TextDocumentContentChangeEvent) {
+    let res = null;
+
     switch (element.text) {
       case "-":
-        await this.addText(element.range, /[\$,>][A-z,0-9,_]+-$/, ">", 0);
+        res = this.makeObject(element.range, /[\$,>][A-z,0-9,_]+-$/, ">", 0);
         break;
       case "=":
-        await this.addText(element.range, /[",'].+?[",'].*?=$/, ">", 0);
+        res = this.makeObject(element.range, /[",']\w+?[",']\s?=$/, ">", 0);
         break;
       case ".":
-        await this.addText(element.range, /[\$,>][A-z,0-9,_]+\.$/, "->", 1);
+        res = this.makeObject(element.range, /[\$,>][A-z,0-9,_]+\.$/, "->", 1);
         break;
     }
+
+    return res;
   }
 
   private replacePhpObjectOperator(event: TextDocumentChangeEvent) {
@@ -82,13 +81,34 @@ export class PhpExtension {
 
     this.changeTimers.set(
       fileName,
-      setTimeout(async () => {
+      setTimeout(() => {
         this.changeTimers.delete(fileName);
 
-        for (const el of event.contentChanges) {
-          const d = await this.applyChanges(el);
+        let changes: any = [];
+
+        event.contentChanges.forEach((el) => {
+          const c = this.makeChange(el);
+          if (c) {
+            changes.push(c);
+          }
+        });
+
+        if (changes.length) {
+          const editor = window.activeTextEditor;
+          if (editor) {
+            editor.edit((editBuilder: TextEditorEdit) => {
+              changes.forEach((el: any) => {
+                if (el.delete) {
+                  editBuilder.delete(
+                    new Range(el.start.translate(0, -el.delete), el.start)
+                  );
+                }
+                editBuilder.insert(el.start, el.text);
+              });
+            });
+          }
         }
-      }, 300)
+      }, 250)
     );
   }
 }
