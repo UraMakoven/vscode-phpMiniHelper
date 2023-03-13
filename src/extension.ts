@@ -6,3 +6,4 @@ let phpExtension: PhpExtension;
 export function activate(context: vscode.ExtensionContext) {
   phpExtension = new PhpExtension(context);
 }
+
