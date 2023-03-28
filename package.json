@@ -2,7 +2,7 @@
   "name": "phpautoobjectoperator",
   "displayName": "Php Auto Object Operator",
   "description": "auto insert php object operator",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "publisher": "UraMakoven",
   "icon": "main.ico",
   "engines": {

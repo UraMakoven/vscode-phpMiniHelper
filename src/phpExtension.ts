@@ -50,6 +50,9 @@ export class PhpExtension {
     let res = null;
 
     switch (element.text) {
+      case ">":
+        res = this.makeObject(element.range, /[-,=]>{2}$/, ">", 2);
+        break;
       case "-":
         res = this.makeObject(element.range, /[\$,>][A-z,0-9,_]+-$/, ">", 0);
         break;
